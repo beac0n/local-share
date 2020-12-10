@@ -14,44 +14,42 @@ import (
 )
 
 type ConnConfig struct {
-	serverHost     string
-	pipeHost       string
-	serverConnChan chan *net.Conn
-	pipeConnChan   chan *net.Conn
-	logErrors      bool
+	serverHost string
+	pipeHost   string
+	logErrors  bool
 }
 
-func (connConfig ConnConfig) initServerDial() {
+func (connConfig *ConnConfig) initServerDial(serverConnChan, pipeConnChan chan *net.Conn) {
 	for {
 		serverConn, err := net.Dial("tcp", connConfig.serverHost)
 		if connConfig.sleepIfErr(err) {
 			continue
 		}
 
-		connConfig.serverConnChan <- &serverConn
-		pipeConn := <-connConfig.pipeConnChan
+		serverConnChan <- &serverConn
+		pipeConn := <-pipeConnChan
 
 		_, _ = io.Copy(*pipeConn, serverConn)
 		_ = (*pipeConn).Close()
 	}
 }
 
-func (connConfig ConnConfig) initPipeDial() {
+func (connConfig *ConnConfig) initPipeDial(serverConnChan, pipeConnChan chan *net.Conn) {
 	for {
 		pipeConn, err := net.Dial("tcp", connConfig.pipeHost)
 		if connConfig.sleepIfErr(err) {
 			continue
 		}
 
-		serverConn := <-connConfig.serverConnChan
-		connConfig.pipeConnChan <- &pipeConn
+		serverConn := <-serverConnChan
+		pipeConnChan <- &pipeConn
 
 		_, _ = io.Copy(*serverConn, pipeConn)
 		_ = (*serverConn).Close()
 	}
 }
 
-func (connConfig ConnConfig) sleepIfErr(err error) bool {
+func (connConfig *ConnConfig) sleepIfErr(err error) bool {
 	if err == nil {
 		return false
 	}
@@ -64,17 +62,12 @@ func (connConfig ConnConfig) sleepIfErr(err error) bool {
 	return true
 }
 
-func initPipedConnection(logErrors bool, serverHost string, pipeHost string) {
-	config := ConnConfig{
-		logErrors:      logErrors,
-		serverHost:     serverHost,
-		pipeHost:       pipeHost,
-		serverConnChan: make(chan *net.Conn),
-		pipeConnChan:   make(chan *net.Conn),
-	}
+func (connConfig *ConnConfig) initPipedConnection() {
+	serverConnChan := make(chan *net.Conn)
+	pipeConnChan := make(chan *net.Conn)
 
-	go config.initServerDial()
-	go config.initPipeDial()
+	go connConfig.initServerDial(serverConnChan, pipeConnChan)
+	go connConfig.initPipeDial(serverConnChan, pipeConnChan)
 }
 
 func Run(serverHost, pipeHost, pipeProtocol string) {
@@ -85,8 +78,14 @@ func Run(serverHost, pipeHost, pipeProtocol string) {
 
 	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+strconv.Itoa(config.Public))
 
-	for i := 0; i < 100; i++ {
-		initPipedConnection(i == 0, serverHostIp+":"+strconv.Itoa(config.Client), pipeHost)
+	serverHostForClient := serverHostIp + ":" + strconv.Itoa(config.Client)
+
+	connConfigFirst := ConnConfig{logErrors: true, serverHost: serverHostForClient, pipeHost: pipeHost}
+	connConfig := ConnConfig{logErrors: false, serverHost: serverHostForClient, pipeHost: pipeHost}
+
+	connConfigFirst.initPipedConnection()
+	for i := 0; i < 99; i++ {
+		connConfig.initPipedConnection()
 	}
 
 	// make sure app does not quit

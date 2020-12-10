@@ -1,14 +1,22 @@
 package server
 
 import (
-	"io"
-	"log"
-	"net"
+	"local-share/src/pipedConnection"
 	"net/http"
-	"strings"
+	"sync"
 )
 
 type ReqHandler struct {
+}
+
+var pipedConnections *sync.Map
+
+func Run(host string) {
+	pipedConnections = &sync.Map{}
+
+	if err := http.ListenAndServe(host, &ReqHandler{}); err != nil {
+		panic(err)
+	}
 }
 
 func (reqHandler *ReqHandler) ServeHTTP(resWriter http.ResponseWriter, req *http.Request) {
@@ -25,88 +33,30 @@ func (reqHandler *ReqHandler) create(resWriter http.ResponseWriter) {
 	headers := resWriter.Header()
 	headers.Add("Content-Type", "application/json")
 
-	publicPort, clientPort := createPipedConnection()
+	conn := pipedConnection.NewPipedConnection()
 
-	if _, err := resWriter.Write([]byte("{\"client\":" + clientPort + ", \"public\": " + publicPort + "}")); err != nil {
+	pipedConnections.Store(conn.GetKey(), &conn)
+
+	message := "{\"client\":" + conn.GetClientPort() + ", \"public\": " + conn.GetPublicPort() + "}"
+	if _, err := resWriter.Write([]byte(message)); err != nil {
 		resWriter.WriteHeader(500)
 		return
 	}
 }
 
-func (reqHandler *ReqHandler) delete(writer http.ResponseWriter, req *http.Request) {
+func (reqHandler *ReqHandler) delete(resWriter http.ResponseWriter, req *http.Request) {
 	queryValues := req.URL.Query()
 	clientPort := queryValues.Get("client")
 	publicPort := queryValues.Get("public")
 
-	// TODO: implement stopping
-	log.Println(clientPort, publicPort)
-}
+	key := pipedConnection.GetKeyFromPorts(clientPort, publicPort)
+	conn, ok := pipedConnections.Load(key)
 
-func Run(host string) {
-	if err := http.ListenAndServe(host, &ReqHandler{}); err != nil {
-		panic(err)
-	}
-}
-
-func createPipedConnection() (string, string) {
-	publicListener, _ := getTcpListener()
-	clientListener, _ := getTcpListener()
-
-	publicListenerPort := getPortFromListener(publicListener)
-	clientListenerPort := getPortFromListener(clientListener)
-
-	createSinglePipedConnection(&publicListener, &clientListener)
-
-	return publicListenerPort, clientListenerPort
-}
-
-func createSinglePipedConnection(publicListener *net.Listener, clientListener *net.Listener) {
-	publicConnChan := make(chan *net.Conn, 100)
-	clientConnChan := make(chan *net.Conn, 100)
-
-	go handlePublicConn(publicListener, publicConnChan, clientConnChan)
-	go handleClientConn(clientListener, publicConnChan, clientConnChan)
-}
-
-func handlePublicConn(publicListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
-	for {
-		publicConn, err := (*publicListener).Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		clientConn := <-clientConnChan
-		publicConnChan <- &publicConn
-
-		_, _ = io.Copy(*clientConn, publicConn)
-		_ = (*clientConn).Close()
+	if !ok {
+		resWriter.WriteHeader(400)
+		return
 	}
 
-}
-
-func handleClientConn(clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
-	for {
-		clientConn, err := (*clientListener).Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		clientConnChan <- &clientConn
-		publicConn := <-publicConnChan
-
-		_, _ = io.Copy(*publicConn, clientConn)
-		_ = (*publicConn).Close()
-	}
-
-}
-
-func getTcpListener() (net.Listener, error) {
-	return net.Listen("tcp", "0.0.0.0:0")
-}
-
-func getPortFromListener(listener net.Listener) string {
-	listenerAddrSplit := strings.Split(listener.Addr().String(), ":")
-	return listenerAddrSplit[len(listenerAddrSplit)-1]
+	conn.(*pipedConnection.PipedConnection).Done()
+	pipedConnections.Delete(key)
 }
