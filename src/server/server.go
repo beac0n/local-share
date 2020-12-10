@@ -8,42 +8,6 @@ import (
 	"strings"
 )
 
-func handlePublicConn(publicListener, clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
-	for {
-		publicConn, err := (*publicListener).Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		go createSinglePipedConnection(publicListener, clientListener)
-
-		clientConn := <-clientConnChan
-		publicConnChan <- &publicConn
-
-		_, _ = io.Copy(*clientConn, publicConn)
-		_ = (*clientConn).Close()
-	}
-
-}
-
-func handleClientConn(clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
-	for {
-		clientConn, err := (*clientListener).Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		clientConnChan <- &clientConn
-		publicConn := <-publicConnChan
-
-		_, _ = io.Copy(*publicConn, clientConn)
-		_ = (*publicConn).Close()
-	}
-
-}
-
 type ReqHandler struct {
 }
 
@@ -96,6 +60,48 @@ func createPipedConnection() (string, string) {
 	return publicListenerPort, clientListenerPort
 }
 
+func createSinglePipedConnection(publicListener *net.Listener, clientListener *net.Listener) {
+	publicConnChan := make(chan *net.Conn, 100)
+	clientConnChan := make(chan *net.Conn, 100)
+
+	go handlePublicConn(publicListener, publicConnChan, clientConnChan)
+	go handleClientConn(clientListener, publicConnChan, clientConnChan)
+}
+
+func handlePublicConn(publicListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
+	for {
+		publicConn, err := (*publicListener).Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		clientConn := <-clientConnChan
+		publicConnChan <- &publicConn
+
+		_, _ = io.Copy(*clientConn, publicConn)
+		_ = (*clientConn).Close()
+	}
+
+}
+
+func handleClientConn(clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
+	for {
+		clientConn, err := (*clientListener).Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		clientConnChan <- &clientConn
+		publicConn := <-publicConnChan
+
+		_, _ = io.Copy(*publicConn, clientConn)
+		_ = (*publicConn).Close()
+	}
+
+}
+
 func getTcpListener() (net.Listener, error) {
 	return net.Listen("tcp", "0.0.0.0:0")
 }
@@ -103,12 +109,4 @@ func getTcpListener() (net.Listener, error) {
 func getPortFromListener(listener net.Listener) string {
 	listenerAddrSplit := strings.Split(listener.Addr().String(), ":")
 	return listenerAddrSplit[len(listenerAddrSplit)-1]
-}
-
-func createSinglePipedConnection(publicListener *net.Listener, clientListener *net.Listener) {
-	publicConnChan := make(chan *net.Conn)
-	clientConnChan := make(chan *net.Conn)
-
-	go handlePublicConn(publicListener, clientListener, publicConnChan, clientConnChan)
-	go handleClientConn(clientListener, publicConnChan, clientConnChan)
 }
