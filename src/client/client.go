@@ -13,50 +13,68 @@ import (
 	"time"
 )
 
-func handleServerDial(index int, serverHost string, serverConnChan, pipeConnChan chan *net.Conn) {
+type ConnConfig struct {
+	serverHost     string
+	pipeHost       string
+	serverConnChan chan *net.Conn
+	pipeConnChan   chan *net.Conn
+	logErrors      bool
+}
+
+func (connConfig ConnConfig) initServerDial() {
 	for {
-		serverConn, err := net.Dial("tcp", serverHost)
-		if err != nil {
-			if index == 0 {
-				log.Println(err)
-			}
-			time.Sleep(time.Second)
+		serverConn, err := net.Dial("tcp", connConfig.serverHost)
+		if connConfig.sleepIfErr(err) {
 			continue
 		}
 
-		serverConnChan <- &serverConn
-		pipeConn := <-pipeConnChan
+		connConfig.serverConnChan <- &serverConn
+		pipeConn := <-connConfig.pipeConnChan
 
 		_, _ = io.Copy(*pipeConn, serverConn)
 		_ = (*pipeConn).Close()
 	}
 }
 
-func handlePipeDial(index int, pipeHost string, serverConnChan, pipeConnChan chan *net.Conn) {
+func (connConfig ConnConfig) initPipeDial() {
 	for {
-		pipeConn, err := net.Dial("tcp", pipeHost)
-		if err != nil {
-			if index == 0 {
-				log.Println(err)
-			}
-			time.Sleep(time.Second)
+		pipeConn, err := net.Dial("tcp", connConfig.pipeHost)
+		if connConfig.sleepIfErr(err) {
 			continue
 		}
 
-		serverConn := <-serverConnChan
-		pipeConnChan <- &pipeConn
+		serverConn := <-connConfig.serverConnChan
+		connConfig.pipeConnChan <- &pipeConn
 
 		_, _ = io.Copy(*serverConn, pipeConn)
 		_ = (*serverConn).Close()
 	}
 }
 
-func genPipedConnection(index int, serverHost string, pipeHost string) {
-	serverConnChan := make(chan *net.Conn)
-	pipeConnChan := make(chan *net.Conn)
+func (connConfig ConnConfig) sleepIfErr(err error) bool {
+	if err == nil {
+		return false
+	}
 
-	go handleServerDial(index, serverHost, serverConnChan, pipeConnChan)
-	go handlePipeDial(index, pipeHost, serverConnChan, pipeConnChan)
+	if connConfig.logErrors {
+		log.Println(err)
+	}
+
+	time.Sleep(time.Second)
+	return true
+}
+
+func initPipedConnection(logErrors bool, serverHost string, pipeHost string) {
+	config := ConnConfig{
+		logErrors:      logErrors,
+		serverHost:     serverHost,
+		pipeHost:       pipeHost,
+		serverConnChan: make(chan *net.Conn),
+		pipeConnChan:   make(chan *net.Conn),
+	}
+
+	go config.initServerDial()
+	go config.initPipeDial()
 }
 
 func Run(serverHost, pipeHost, pipeProtocol string) {
@@ -65,10 +83,10 @@ func Run(serverHost, pipeHost, pipeProtocol string) {
 	serverHostSplit := strings.Split(serverHost, ":")
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
-	fmt.Println("visit", pipeProtocol + "://" + serverHostIp+":"+strconv.Itoa(body.Public))
+	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+strconv.Itoa(body.Public))
 
-	for i := 0; i < 10; i++ {
-		genPipedConnection(i, serverHostIp+":"+strconv.Itoa(body.Client), pipeHost)
+	for i := 0; i < 100; i++ {
+		initPipedConnection(i == 0, serverHostIp+":"+strconv.Itoa(body.Client), pipeHost)
 	}
 
 	// make sure app does not quit
