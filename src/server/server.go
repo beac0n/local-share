@@ -8,19 +8,18 @@ import (
 	"strings"
 )
 
-func handlePublicConn(publicListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
+func handlePublicConn(publicListener, clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
 	for {
 		publicConn, err := (*publicListener).Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		go createSinglePipedConnection(publicListener, clientListener)
 
 		clientConn := <-clientConnChan
 		publicConnChan <- &publicConn
-
-		if err != nil {
-			log.Println(err)
-			_ = (*clientConn).Close()
-			_ = publicConn.Close()
-			continue
-		}
 
 		_, _ = io.Copy(*clientConn, publicConn)
 		_ = (*clientConn).Close()
@@ -31,16 +30,13 @@ func handlePublicConn(publicListener *net.Listener, publicConnChan, clientConnCh
 func handleClientConn(clientListener *net.Listener, publicConnChan, clientConnChan chan *net.Conn) {
 	for {
 		clientConn, err := (*clientListener).Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 
 		clientConnChan <- &clientConn
 		publicConn := <-publicConnChan
-
-		if err != nil {
-			log.Println(err)
-			_ = clientConn.Close()
-			_ = (*publicConn).Close()
-			continue
-		}
 
 		_, _ = io.Copy(*publicConn, clientConn)
 		_ = (*publicConn).Close()
@@ -95,9 +91,7 @@ func createPipedConnection() (string, string) {
 	publicListenerPort := getPortFromListener(publicListener)
 	clientListenerPort := getPortFromListener(clientListener)
 
-	for i := 0; i < 10; i++ {
-		createSinglePipedConnection(publicListener, clientListener)
-	}
+	createSinglePipedConnection(&publicListener, &clientListener)
 
 	return publicListenerPort, clientListenerPort
 }
@@ -111,10 +105,10 @@ func getPortFromListener(listener net.Listener) string {
 	return listenerAddrSplit[len(listenerAddrSplit)-1]
 }
 
-func createSinglePipedConnection(publicListener net.Listener, clientListener net.Listener) {
+func createSinglePipedConnection(publicListener *net.Listener, clientListener *net.Listener) {
 	publicConnChan := make(chan *net.Conn)
 	clientConnChan := make(chan *net.Conn)
 
-	go handlePublicConn(&publicListener, publicConnChan, clientConnChan)
-	go handleClientConn(&clientListener, publicConnChan, clientConnChan)
+	go handlePublicConn(publicListener, clientListener, publicConnChan, clientConnChan)
+	go handleClientConn(clientListener, publicConnChan, clientConnChan)
 }
