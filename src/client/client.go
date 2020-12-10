@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -76,9 +78,11 @@ func Run(serverHost, pipeHost, pipeProtocol string) {
 	serverHostSplit := strings.Split(serverHost, ":")
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
-	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+strconv.Itoa(config.Public))
+	publicPortString := strconv.Itoa(config.Public)
+	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+publicPortString)
 
-	serverHostForClient := serverHostIp + ":" + strconv.Itoa(config.Client)
+	clientPortString := strconv.Itoa(config.Client)
+	serverHostForClient := serverHostIp + ":" + clientPortString
 
 	connConfigFirst := ConnConfig{logErrors: true, serverHost: serverHostForClient, pipeHost: pipeHost}
 	connConfig := ConnConfig{logErrors: false, serverHost: serverHostForClient, pipeHost: pipeHost}
@@ -87,6 +91,17 @@ func Run(serverHost, pipeHost, pipeProtocol string) {
 	for i := 0; i < 99; i++ {
 		connConfig.initPipedConnection()
 	}
+
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt)
+	go func() {
+		<-signalChannel
+		url := "http://" + serverHost + "?client=" + clientPortString + "&public=" + publicPortString
+		req, _ := http.NewRequest("DELETE", url, nil)
+		_, _ = (&http.Client{}).Do(req)
+
+		os.Exit(0)
+	}()
 
 	// make sure app does not quit
 	<-make(chan struct{})
