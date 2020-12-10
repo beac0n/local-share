@@ -78,48 +78,46 @@ func initPipedConnection(logErrors bool, serverHost string, pipeHost string) {
 }
 
 func Run(serverHost, pipeHost, pipeProtocol string) {
-	body := getBody(serverHost)
+	config := getPipedConnectionConfig(serverHost)
 
 	serverHostSplit := strings.Split(serverHost, ":")
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
-	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+strconv.Itoa(body.Public))
+	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+strconv.Itoa(config.Public))
 
 	for i := 0; i < 100; i++ {
-		initPipedConnection(i == 0, serverHostIp+":"+strconv.Itoa(body.Client), pipeHost)
+		initPipedConnection(i == 0, serverHostIp+":"+strconv.Itoa(config.Client), pipeHost)
 	}
 
 	// make sure app does not quit
 	<-make(chan struct{})
 }
 
-type Body struct {
+type Config struct {
 	Client int
 	Public int
 }
 
-func getBody(serverHost string) Body {
+func getPipedConnectionConfig(serverHost string) Config {
 	req, err := http.NewRequest("GET", "http://"+serverHost, nil)
-	if err != nil {
-		panic(err)
-	}
+	panicOnErr(err)
 
 	resp, err := (&http.Client{}).Do(req)
-	if err != nil {
-		panic(err)
-	}
+	panicOnErr(err)
 	defer resp.Body.Close()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		panic(err)
-	}
+	panicOnErr(err)
 
-	var body Body
+	var body Config
 	err = json.Unmarshal(bodyBytes, &body)
-	if err != nil {
-		panic(err)
-	}
+	panicOnErr(err)
 
 	return body
+}
+
+func panicOnErr(err error) {
+	if err != nil {
+		panic(err)
+	}
 }
