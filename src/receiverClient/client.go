@@ -47,6 +47,7 @@ func (config *ConnConfig) initServerDial(i int) {
 	serverHostSplit := strings.Split(config.serverHost, ".")
 	serverHostIp := strings.Join(serverHostSplit[1:len(serverHostSplit)], ".")
 
+	log.Println("LISTENING", "127.0.0.1:"+localPort)
 	localListener, err := net.Listen("tcp", "127.0.0.1:"+localPort)
 	if err != nil {
 		fmt.Println(err)
@@ -63,6 +64,7 @@ func (config *ConnConfig) initServerDial(i int) {
 }
 
 func (config *ConnConfig) handleCopyConns(serverHostIp string, remotePort string, clientConn *net.Conn) {
+	log.Println("DIALING", remotePort+"."+serverHostIp)
 	serverConn, err := net.Dial("tcp", remotePort+"."+serverHostIp)
 	if err != nil {
 		log.Println("handleCopyConns ERR", err)
