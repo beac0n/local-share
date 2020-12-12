@@ -102,15 +102,17 @@ func deleteAllPipedConnections(serverHost string, deleteSuffixes chan string) {
 func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes chan string) {
 	config := getPipedConnectionConfig(serverHost)
 
-	serverHostSplit := strings.Split(serverHost, ":")
-	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
+	serverHostSplit := strings.Split(serverHost, ".")
+	serverHostIp := strings.Join(serverHostSplit[1:len(serverHostSplit)], ".")
 
 	clientPortString := strconv.Itoa(config.Client)
 
 	deleteSuffixes <- "?client=" + clientPortString + "&public=" + strconv.Itoa(config.Public)
 
-	serverHostForClient := serverHostIp + ":" + clientPortString
+	serverHostForClient := clientPortString + "." + serverHostIp
 	pipeHost := "127.0.0.1:" + port
+
+	fmt.Println(serverHostForClient)
 
 	connConfigFirst := ConnConfig{logErrors: true, serverHost: serverHostForClient, pipeHost: pipeHost}
 	connConfig := ConnConfig{logErrors: false, serverHost: serverHostForClient, pipeHost: pipeHost}
