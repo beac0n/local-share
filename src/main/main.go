@@ -1,31 +1,63 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"local-share/src/client"
+	"local-share/src/receiverClient"
+	"local-share/src/senderClient"
 	"local-share/src/server"
+	"strconv"
 	"strings"
 )
 
-type ArrayFlags []string
+type PortFlags []string
 
-func (list *ArrayFlags) String() string {
+func (list *PortFlags) String() string {
 	return strings.Join(*list, " ")
 }
 
-func (list *ArrayFlags) Set(value string) error {
-	*list = append(*list, value)
+func (list *PortFlags) Set(value string) error {
+	if strings.Contains(value, "-") {
+		split := strings.Split(value, "-")
+		if len(split) != 2 {
+			return errors.New("invalid port range")
+		}
+
+		rangeStart, err := strconv.Atoi(split[0])
+		if err != nil {
+			return err
+		}
+		rangeEnd, err := strconv.Atoi(split[1])
+		if err != nil {
+			return err
+		}
+
+		for i := rangeStart; i < rangeEnd; i++ {
+			*list = append(*list, strconv.Itoa(i))
+		}
+	} else {
+		if _, err := strconv.Atoi(value); err != nil {
+			return err
+		}
+
+		*list = append(*list, value)
+	}
+
 	return nil
 }
-
-var ports ArrayFlags
 
 func main() {
 	host := flag.String("host", "0.0.0.0:8080", "public available server http host")
 
-	// client flags
-	flag.Var(&ports, "ports", "list of localhost ports to pipe traffic to")
+	// senderClient flags
+	isReceiver := flag.Bool("receiver", false, "run senderClient in receiver mode")
+
+	var localPorts PortFlags
+	flag.Var(&localPorts, "ports", "list of localhost ports to send traffic to")
+
+	var remotePorts PortFlags
+	flag.Var(&remotePorts, "remote-ports", "list of remote ports to send traffic to")
 
 	// isServer flags
 	isServer := flag.Bool("server", false, "run in server mode")
@@ -35,8 +67,11 @@ func main() {
 	if *isServer {
 		fmt.Println("starting server...")
 		server.Run(*host)
+	} else if *isReceiver {
+		fmt.Println("starting client in receiver mode...")
+		receiverClient.Run(*host, localPorts, remotePorts)
 	} else {
-		fmt.Println("starting client...")
-		client.Run(*host, ports)
+		fmt.Println("starting client in sender mode...")
+		senderClient.Run(*host, localPorts)
 	}
 }
