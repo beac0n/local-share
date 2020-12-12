@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
 )
 
@@ -30,6 +31,12 @@ func Run(serverHost string, localPorts, remotePorts []string) {
 	for i := range localPorts {
 		go config.initServerDial(i)
 	}
+
+	signalChannel := make(chan os.Signal)
+	signal.Notify(signalChannel, os.Interrupt)
+	<-signalChannel
+
+	os.Exit(0)
 
 }
 
