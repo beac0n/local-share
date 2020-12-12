@@ -2,6 +2,7 @@ package server
 
 import (
 	"local-share/src/pipedConnection"
+	"log"
 	"net/http"
 	"sync"
 )
@@ -39,6 +40,7 @@ func (reqHandler *ReqHandler) create(resWriter http.ResponseWriter) {
 
 	message := "{\"client\":" + conn.GetClientPort() + ", \"public\": " + conn.GetPublicPort() + "}"
 	if _, err := resWriter.Write([]byte(message)); err != nil {
+		log.Println(err)
 		resWriter.WriteHeader(500)
 		return
 	}
