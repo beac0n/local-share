@@ -72,39 +72,58 @@ func (connConfig *ConnConfig) initPipedConnection() {
 	go connConfig.initPipeDial(serverConnChan, pipeConnChan)
 }
 
-func Run(serverHost, pipeHost, pipeProtocol string) {
+func Run(serverHost string, ports []string) {
+	deleteSuffixes := make(chan string, len(ports))
+
+	for _, port := range ports {
+		go initPipedConnectionForPort(serverHost, port, deleteSuffixes)
+	}
+
+	signalChannel := make(chan os.Signal)
+	signal.Notify(signalChannel, os.Interrupt)
+	<-signalChannel
+
+	deleteAllPipedConnections(serverHost, deleteSuffixes)
+
+	os.Exit(0)
+}
+
+func deleteAllPipedConnections(serverHost string, deleteSuffixes chan string) {
+	for {
+		select {
+		case deleteSuffix := <-deleteSuffixes:
+			go deletePipedConnection(serverHost, deleteSuffix)
+		default:
+			return
+		}
+	}
+}
+
+func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes chan string) {
 	config := getPipedConnectionConfig(serverHost)
 
 	serverHostSplit := strings.Split(serverHost, ":")
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
-	publicPortString := strconv.Itoa(config.Public)
-	fmt.Println("visit", pipeProtocol+"://"+serverHostIp+":"+publicPortString)
-
 	clientPortString := strconv.Itoa(config.Client)
+
+	deleteSuffixes <- "?client=" + clientPortString + "&public=" + strconv.Itoa(config.Public)
+
 	serverHostForClient := serverHostIp + ":" + clientPortString
+	pipeHost := "127.0.0.1:" + port
 
 	connConfigFirst := ConnConfig{logErrors: true, serverHost: serverHostForClient, pipeHost: pipeHost}
 	connConfig := ConnConfig{logErrors: false, serverHost: serverHostForClient, pipeHost: pipeHost}
 
 	connConfigFirst.initPipedConnection()
-	for i := 0; i < 99; i++ {
+	for i := 1; i < 100; i++ {
 		connConfig.initPipedConnection()
 	}
+}
 
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, os.Interrupt)
-	go func() {
-		<-signalChannel
-		url := "http://" + serverHost + "?client=" + clientPortString + "&public=" + publicPortString
-		req, _ := http.NewRequest("DELETE", url, nil)
-		_, _ = (&http.Client{}).Do(req)
-
-		os.Exit(0)
-	}()
-
-	// make sure app does not quit
-	<-make(chan struct{})
+func deletePipedConnection(serverHost string, deleteSuffix string) {
+	req, _ := http.NewRequest("DELETE", "http://"+serverHost+deleteSuffix, nil)
+	_, _ = (&http.Client{}).Do(req)
 }
 
 type Config struct {
@@ -132,6 +151,7 @@ func getPipedConnectionConfig(serverHost string) Config {
 
 func panicOnErr(err error) {
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }

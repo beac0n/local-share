@@ -5,25 +5,38 @@ import (
 	"fmt"
 	"local-share/src/client"
 	"local-share/src/server"
+	"strings"
 )
 
+type ArrayFlags []string
+
+func (list *ArrayFlags) String() string {
+	return strings.Join(*list, " ")
+}
+
+func (list *ArrayFlags) Set(value string) error {
+	*list = append(*list, value)
+	return nil
+}
+
+var ports ArrayFlags
+
 func main() {
+	host := flag.String("host", "0.0.0.0:8080", "public available server http host")
+
 	// client flags
-	serverHost := flag.String("server-host", "127.0.0.1:8080", "remote server host")
-	pipeHost := flag.String("pipe-host", "127.0.0.1:3000", "host to pipe requests to")
-	pipeProtocol := flag.String("pipe-protocol", "http", "the protocol used on the piped host")
+	flag.Var(&ports, "ports", "list of localhost ports to pipe traffic to")
 
 	// isServer flags
 	isServer := flag.Bool("server", false, "run in server mode")
-	host := flag.String("host", "0.0.0.0:8080", "public available http host")
 
 	flag.Parse()
 
 	if *isServer {
-		fmt.Println("START SERVER")
+		fmt.Println("starting server...")
 		server.Run(*host)
 	} else {
-		fmt.Println("START CLIENT")
-		client.Run(*serverHost, *pipeHost,*pipeProtocol)
+		fmt.Println("starting client...")
+		client.Run(*host, ports)
 	}
 }
