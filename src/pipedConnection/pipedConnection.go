@@ -1,8 +1,7 @@
 package pipedConnection
 
 import (
-	"io"
-	"log"
+	"local-share/src/util"
 	"net"
 	"strings"
 )
@@ -50,24 +49,8 @@ func (connection *PipedConnection) handleCopyConns() {
 		publicConn := <-(*connection.publicConnChan)
 		clientConn := <-(*connection.clientConnChan)
 
-		go copyConns(clientConn, publicConn)
+		go util.CopyConns(clientConn, publicConn)
 	}
-}
-
-func copyConns(src, dst *net.Conn) {
-	done := make(chan struct{})
-
-	go copyConn(src, dst, done)
-	go copyConn(dst, src, done)
-
-	<-done
-	<-done
-}
-
-func copyConn(dst, src *net.Conn, done chan struct{}) {
-	_, _ = io.Copy(*dst, *src)
-	_ = (*dst).Close()
-	done <- struct{}{}
 }
 
 func (connection *PipedConnection) handleCreateConns(listener *net.Listener, connChan *chan *net.Conn) {
@@ -77,13 +60,7 @@ func (connection *PipedConnection) handleCreateConns(listener *net.Listener, con
 			return
 		}
 
-		conn, err := (*listener).Accept()
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-
-		*connChan <- &conn
+		util.HandleCreateConn(listener, connChan)
 	}
 }
 
