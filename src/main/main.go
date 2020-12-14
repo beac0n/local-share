@@ -48,13 +48,13 @@ func (list *PortFlags) Set(value string) error {
 }
 
 func main() {
-	host := flag.String("host", "0.0.0.0:8080", "public available server http host")
+	host := flag.String("host", "127.0.0.1:8080", "public available server http host")
 
 	// senderClient flags
-	isReceiver := flag.Bool("receiver", false, "run senderClient in receiver mode")
+	isReceiver := flag.Bool("receiver", false, "run client in receiver mode")
 
 	var localPorts PortFlags
-	flag.Var(&localPorts, "ports", "list of localhost ports to send traffic to")
+	flag.Var(&localPorts, "local-ports", "list of localhost ports to send traffic to")
 
 	var remotePorts PortFlags
 	flag.Var(&remotePorts, "remote-ports", "list of remote ports to send traffic to")

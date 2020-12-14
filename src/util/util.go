@@ -9,20 +9,26 @@ import (
 func CopyConns(src, dst *net.Conn) {
 	done := make(chan struct{})
 
-	go copyConn(src, dst, done)
-	go copyConn(dst, src, done)
+	go CopyConn(src, dst, done)
+	go CopyConn(dst, src, done)
+
+	log.Println("CopyConns waiting for copy done")
 
 	<-done
 	<-done
+
+	log.Println("CopyConns closing conns")
+	if err := (*src).Close(); err != nil {
+		log.Println("CopyConn Close src ERR", err)
+	}
+
+	if err := (*dst).Close(); err != nil {
+		log.Println("CopyConn Close dst ERR", err)
+	}
 }
 
-func copyConn(dst, src *net.Conn, done chan struct{}) {
-	if _, err := io.Copy(*dst, *src); err != nil {
-		log.Println("copyConn Copy ERR", err)
-	}
-	if err := (*dst).Close(); err != nil {
-		log.Println("copyConn Close ERR", err)
-	}
+func CopyConn(dst, src *net.Conn, done chan struct{}) {
+	_, _ = io.Copy(*dst, *src)
 	done <- struct{}{}
 }
 
@@ -34,4 +40,12 @@ func HandleCreateConn(listener *net.Listener, connChan *chan *net.Conn) {
 	}
 
 	*connChan <- &conn
+}
+
+func LogIfErr(err error) bool {
+	isError := err != nil
+	if isError {
+		log.Println(err)
+	}
+	return isError
 }

@@ -2,6 +2,7 @@ package pipedConnection
 
 import (
 	"local-share/src/util"
+	"log"
 	"net"
 	"strings"
 )
@@ -29,11 +30,36 @@ func NewPipedConnection() PipedConnection {
 		clientConnChan: &clientConnChan,
 	}
 
-	go connection.handleCreateConns(connection.publicListener, connection.publicConnChan)
-	go connection.handleCreateConns(connection.clientListener, connection.clientConnChan)
+	go connection.handleCreateConns()
 	go connection.handleCopyConns()
 
 	return connection
+}
+
+func (connection *PipedConnection) handleCreateConns() {
+	for {
+		if connection.done {
+			_ = (*connection.publicListener).Close()
+			_ = (*connection.clientListener).Close()
+			return
+		}
+
+		publicConn, err := (*connection.publicListener).Accept()
+		if err != nil {
+			log.Println("handleCreateConns ERR", err)
+			return
+		}
+
+		clientConn, err := (*connection.clientListener).Accept()
+		if err != nil {
+			log.Println("handleCreateConns ERR", err)
+			_ = (*connection.publicListener).Close()
+			return
+		}
+
+		*connection.publicConnChan <- &publicConn
+		*connection.clientConnChan <- &clientConn
+	}
 }
 
 func (connection *PipedConnection) Done() {
@@ -49,19 +75,22 @@ func (connection *PipedConnection) handleCopyConns() {
 		publicConn := <-(*connection.publicConnChan)
 		clientConn := <-(*connection.clientConnChan)
 
-		go util.CopyConns(clientConn, publicConn)
+		go connection.handleCopyConn(publicConn, clientConn)
 	}
 }
 
-func (connection *PipedConnection) handleCreateConns(listener *net.Listener, connChan *chan *net.Conn) {
-	for {
-		if connection.done {
-			_ = (*listener).Close()
-			return
-		}
+func (connection *PipedConnection) handleCopyConn(publicConn *net.Conn, clientConn *net.Conn) {
+	clientDone := make(chan struct{})
+	publicDone := make(chan struct{})
 
-		util.HandleCreateConn(listener, connChan)
-	}
+	go util.CopyConn(clientConn, publicConn, publicDone)
+	go util.CopyConn(publicConn, clientConn, clientDone)
+
+	<-publicDone
+	_ = (*publicConn).Close()
+
+	<-clientDone
+	_ = (*clientConn).Close()
 }
 
 func (connection *PipedConnection) GetPublicPort() string {
