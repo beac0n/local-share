@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"time"
@@ -143,9 +142,7 @@ func Run(serverHost string, ports []string) {
 		go initPipedConnectionForPort(serverHost, port, deleteSuffixes)
 	}
 
-	signalChannel := make(chan os.Signal)
-	signal.Notify(signalChannel, os.Interrupt)
-	<-signalChannel
+	util.WaitForSigInt(false)
 
 	deleteAllPipedConnections(serverHost, deleteSuffixes)
 
@@ -190,8 +187,11 @@ func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes c
 }
 
 func deletePipedConnection(serverHost string, deleteSuffix string) {
-	req, _ := http.NewRequest("DELETE", "http://"+serverHost+deleteSuffix, nil)
-	_, _ = (&http.Client{}).Do(req)
+	req, err := http.NewRequest("DELETE", "http://"+serverHost+deleteSuffix, nil)
+	util.LogIfErr(err)
+
+	_, err = (&http.Client{}).Do(req)
+	util.LogIfErr(err)
 }
 
 type Config struct {
@@ -205,7 +205,6 @@ func getPipedConnectionConfig(serverHost string) Config {
 
 	resp, err := (&http.Client{}).Do(req)
 	panicOnErr(err)
-	defer resp.Body.Close()
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	panicOnErr(err)
@@ -213,6 +212,8 @@ func getPipedConnectionConfig(serverHost string) Config {
 	var body Config
 	err = json.Unmarshal(bodyBytes, &body)
 	panicOnErr(err)
+
+	util.LogIfErr(resp.Body.Close())
 
 	return body
 }

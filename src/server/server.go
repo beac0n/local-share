@@ -2,7 +2,7 @@ package server
 
 import (
 	"local-share/src/pipedConnection"
-	"log"
+	"local-share/src/util"
 	"net/http"
 	"sync"
 )
@@ -34,13 +34,16 @@ func (reqHandler *ReqHandler) create(resWriter http.ResponseWriter) {
 	headers := resWriter.Header()
 	headers.Add("Content-Type", "application/json")
 
-	conn := pipedConnection.NewPipedConnection()
+	conn, err := pipedConnection.NewPipedConnection()
+	if util.LogIfErr(err) {
+		resWriter.WriteHeader(500)
+		return
+	}
 
 	pipedConnections.Store(conn.GetKey(), &conn)
 
 	message := "{\"client\":" + conn.GetClientPort() + ", \"public\": " + conn.GetPublicPort() + "}"
-	if _, err := resWriter.Write([]byte(message)); err != nil {
-		log.Println(err)
+	if _, err := resWriter.Write([]byte(message)); util.LogIfErr(err) {
 		resWriter.WriteHeader(500)
 		return
 	}

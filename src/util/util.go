@@ -4,42 +4,15 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
+	"os/signal"
 )
 
-func CopyConns(src, dst *net.Conn) {
-	done := make(chan struct{})
-
-	go CopyConn(src, dst, done)
-	go CopyConn(dst, src, done)
-
-	log.Println("CopyConns waiting for copy done")
-
-	<-done
-	<-done
-
-	log.Println("CopyConns closing conns")
-	if err := (*src).Close(); err != nil {
-		log.Println("CopyConn Close src ERR", err)
-	}
-
-	if err := (*dst).Close(); err != nil {
-		log.Println("CopyConn Close dst ERR", err)
-	}
-}
-
 func CopyConn(dst, src *net.Conn, done chan struct{}) {
-	_, _ = io.Copy(*dst, *src)
+	_, err := io.Copy(*dst, *src)
+	LogIfErr(err)
+
 	done <- struct{}{}
-}
-
-func HandleCreateConn(listener *net.Listener, connChan *chan *net.Conn) {
-	conn, err := (*listener).Accept()
-	if err != nil {
-		log.Println("HandleCreateConn ERR", err)
-		return
-	}
-
-	*connChan <- &conn
 }
 
 func LogIfErr(err error) bool {
@@ -48,4 +21,14 @@ func LogIfErr(err error) bool {
 		log.Println(err)
 	}
 	return isError
+}
+
+func WaitForSigInt(osExit bool) {
+	signalChannel := make(chan os.Signal)
+	signal.Notify(signalChannel, os.Interrupt)
+	<-signalChannel
+
+	if osExit {
+		os.Exit(0)
+	}
 }

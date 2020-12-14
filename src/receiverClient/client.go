@@ -3,10 +3,8 @@ package receiverClient
 import (
 	"fmt"
 	"local-share/src/util"
-	"log"
 	"net"
 	"os"
-	"os/signal"
 	"strings"
 )
 
@@ -32,12 +30,7 @@ func Run(serverHost string, localPorts, remotePorts []string) {
 		go config.initServerDial(i)
 	}
 
-	signalChannel := make(chan os.Signal)
-	signal.Notify(signalChannel, os.Interrupt)
-	<-signalChannel
-
-	os.Exit(0)
-
+	util.WaitForSigInt(true)
 }
 
 func (config *ConnConfig) initServerDial(i int) {
@@ -47,14 +40,12 @@ func (config *ConnConfig) initServerDial(i int) {
 	serverHostSplit := strings.Split(config.serverHost, ":")
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
-	log.Println("LISTENING", "127.0.0.1:"+localPort)
 	localListener, err := net.Listen("tcp", "127.0.0.1:"+localPort)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	if util.LogIfErr(err) {
+		return
 	}
-	clientConnChan := make(chan *net.Conn, 10)
 
+	clientConnChan := make(chan *net.Conn, 10)
 	go handleCreateConns(&localListener, &clientConnChan)
 
 	for {
@@ -64,18 +55,28 @@ func (config *ConnConfig) initServerDial(i int) {
 }
 
 func (config *ConnConfig) handleCopyConns(serverHostIp string, remotePort string, clientConn *net.Conn) {
-	log.Println("DIALING", serverHostIp+":"+remotePort)
 	serverConn, err := net.Dial("tcp", serverHostIp+":"+remotePort)
-	if err != nil {
-		log.Println("handleCopyConns ERR", err)
+	if util.LogIfErr(err) {
 		return
 	}
 
-	util.CopyConns(&serverConn, clientConn)
+	done := make(chan struct{})
+
+	go util.CopyConn(&serverConn, clientConn, done)
+	go util.CopyConn(clientConn, &serverConn, done)
+
+	<-done
+	<-done
+
+	util.LogIfErr(serverConn.Close())
+	util.LogIfErr((*clientConn).Close())
 }
 
 func handleCreateConns(listener *net.Listener, connChan *chan *net.Conn) {
 	for {
-		util.HandleCreateConn(listener, connChan)
+		conn, err := (*listener).Accept()
+		if !util.LogIfErr(err) {
+			*connChan <- &conn
+		}
 	}
 }

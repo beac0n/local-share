@@ -15,9 +15,16 @@ type PipedConnection struct {
 	clientConnChan *chan *net.Conn
 }
 
-func NewPipedConnection() PipedConnection {
-	publicListener, _ := getTcpListener()
-	clientListener, _ := getTcpListener()
+func NewPipedConnection() (PipedConnection, error) {
+	publicListener, err := getTcpListener()
+	if err != nil {
+		return PipedConnection{}, err
+	}
+
+	clientListener, err := getTcpListener()
+	if err != nil {
+		return PipedConnection{}, err
+	}
 
 	publicConnChan := make(chan *net.Conn, 10)
 	clientConnChan := make(chan *net.Conn, 10)
@@ -33,14 +40,14 @@ func NewPipedConnection() PipedConnection {
 	go connection.handleCreateConns()
 	go connection.handleCopyConns()
 
-	return connection
+	return connection, nil
 }
 
 func (connection *PipedConnection) handleCreateConns() {
 	for {
 		if connection.done {
-			_ = (*connection.publicListener).Close()
-			_ = (*connection.clientListener).Close()
+			util.LogIfErr((*connection.publicListener).Close())
+			util.LogIfErr((*connection.clientListener).Close())
 			return
 		}
 
@@ -51,9 +58,8 @@ func (connection *PipedConnection) handleCreateConns() {
 		}
 
 		clientConn, err := (*connection.clientListener).Accept()
-		if err != nil {
-			log.Println("handleCreateConns ERR", err)
-			_ = (*connection.publicListener).Close()
+		if util.LogIfErr(err) {
+			util.LogIfErr((*connection.publicListener).Close())
 			return
 		}
 
@@ -87,10 +93,10 @@ func (connection *PipedConnection) handleCopyConn(publicConn *net.Conn, clientCo
 	go util.CopyConn(publicConn, clientConn, clientDone)
 
 	<-publicDone
-	_ = (*publicConn).Close()
+	util.LogIfErr((*publicConn).Close())
 
 	<-clientDone
-	_ = (*clientConn).Close()
+	util.LogIfErr((*clientConn).Close())
 }
 
 func (connection *PipedConnection) GetPublicPort() string {
