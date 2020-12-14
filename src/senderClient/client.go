@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/ioutil"
 	"local-share/src/util"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -22,61 +21,13 @@ type ConnConfig struct {
 	log        bool
 }
 
-func (connConfig *ConnConfig) initServerDial(serverConnChan, pipeConnChan, done chan *net.Conn) {
-	for {
-		serverConn, err := net.Dial("tcp", connConfig.serverHost)
-		if connConfig.sleepIfErr(err) {
-			continue
-		}
-
-		serverConnChan <- &serverConn
-		pipeConn := <-pipeConnChan
-
-		if _, err = io.Copy(*pipeConn, serverConn); err != nil {
-			util.LogIfErr(err)
-		}
-
-		done <- pipeConn
-	}
-}
-
-func (connConfig *ConnConfig) initPipeDial(serverConnChan, pipeConnChan, done chan *net.Conn) {
-	for {
-		pipeConn, err := net.Dial("tcp", connConfig.pipeHost)
-		if connConfig.sleepIfErr(err) {
-			continue
-		}
-
-		serverConn := <-serverConnChan
-		pipeConnChan <- &pipeConn
-		log.Println("WAIT FOR PIPE CONN")
-
-		if _, err = io.Copy(*serverConn, pipeConn); err != nil {
-			util.LogIfErr(err)
-		}
-
-		log.Println("DONE COPY PIPE CONE")
-		done <- serverConn
-	}
-}
-
 func (connConfig *ConnConfig) sleepIfErr(err error) bool {
-	if err == nil {
+	if !connConfig.LogIfErr(err) {
 		return false
-	}
-
-	if connConfig.log {
-		util.LogIfErr(err)
 	}
 
 	time.Sleep(time.Second)
 	return true
-}
-
-func (connConfig *ConnConfig) initPipedConnection() {
-	for {
-		connConfig.handlePipedConnection()
-	}
 }
 
 func (connConfig *ConnConfig) LogIfErr(err error) bool {
@@ -87,10 +38,16 @@ func (connConfig *ConnConfig) LogIfErr(err error) bool {
 	return err != nil
 }
 
+func (connConfig *ConnConfig) initPipedConnection() {
+	for {
+		connConfig.handlePipedConnection()
+	}
+}
+
 func (connConfig *ConnConfig) handlePipedConnection() {
 	serverConn := connConfig.getServerConn()
 
-	readBuf := make([]byte, 65535)
+	readBuf := makeMaxTcpPacketSizeBuf()
 
 	// read some data from server to cache locally
 	n, err := serverConn.Read(readBuf)
@@ -104,38 +61,44 @@ func (connConfig *ConnConfig) handlePipedConnection() {
 
 	done := make(chan struct{})
 	go connConfig.handleReadServer(&serverConn, &pipeConn, &done)
-
-	for {
-		readBuf := make([]byte, 65535)
-
-		// pipe conn should send back immediately, because we've written to it
-		err = pipeConn.SetReadDeadline(time.Now().Add(time.Millisecond * 100))
-		util.LogIfErr(err)
-
-		// everything written to pipe, now read back everything
-		n, err = pipeConn.Read(readBuf)
-		if err != nil && (err == io.EOF || err.(net.Error).Timeout()) {
-			break
-		}
-		util.LogIfErr(err)
-
-		_, err = (serverConn).Write(readBuf[0:n])
-		util.LogIfErr(err)
-	}
+	connConfig.handleWriteServer(&pipeConn, &serverConn)
 
 	<-done
 
-	err = (pipeConn).Close()
+	err = pipeConn.Close()
 	util.LogIfErr(err)
 
-	err = (serverConn).Close()
+	err = serverConn.Close()
 	util.LogIfErr(err)
+}
 
+func (connConfig *ConnConfig) handleWriteServer(pipeConn, serverConn *net.Conn) {
+	for {
+		readBuf := makeMaxTcpPacketSizeBuf()
+
+		// pipe conn should send back immediately, because we've written to it
+		err := (*pipeConn).SetReadDeadline(time.Now().Add(time.Millisecond * 100))
+		util.LogIfErr(err)
+
+		// everything written to pipe, now read back everything
+		n, err := (*pipeConn).Read(readBuf)
+		if err != nil && (err == io.EOF || err.(net.Error).Timeout()) {
+			return
+		}
+		util.LogIfErr(err)
+
+		_, err = (*serverConn).Write(readBuf[0:n])
+		util.LogIfErr(err)
+	}
+}
+
+func makeMaxTcpPacketSizeBuf() []byte {
+	return make([]byte, 65535)
 }
 
 func (connConfig *ConnConfig) handleReadServer(serverConn *net.Conn, pipeConn *net.Conn, done *chan struct{}) {
 	for {
-		readBuf := make([]byte, 65535)
+		readBuf := makeMaxTcpPacketSizeBuf()
 
 		// after first read, data should come in until everything is here
 		err := (*serverConn).SetReadDeadline(time.Now().Add(time.Second))
@@ -213,9 +176,9 @@ func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes c
 
 	pipeHost := "127.0.0.1:" + port
 	serverHostForClient := serverHostIp + ":" + clientPortString
-	serverHstForPublic := serverHostIp + ":" + publicPortString
+	serverHostForPublic := serverHostIp + ":" + publicPortString
 
-	fmt.Println(pipeHost, "<-", serverHostForClient, "<-", serverHstForPublic)
+	fmt.Println(pipeHost, "<-", serverHostForClient, "<-", serverHostForPublic, "<- sender")
 
 	connConfigFirst := ConnConfig{log: true, serverHost: serverHostForClient, pipeHost: pipeHost}
 	connConfig := ConnConfig{log: false, serverHost: serverHostForClient, pipeHost: pipeHost}
