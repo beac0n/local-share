@@ -1,10 +1,10 @@
 package server
 
 import (
-	"local-share/src/pipedConnection"
-	"local-share/src/util"
 	"net/http"
+	"pipedConnection"
 	"sync"
+	"util"
 )
 
 type ReqHandler struct {

@@ -1,10 +1,10 @@
 package pipedConnection
 
 import (
-	"local-share/src/util"
 	"log"
 	"net"
 	"strings"
+	"util"
 )
 
 type PipedConnection struct {
