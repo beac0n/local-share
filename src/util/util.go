@@ -12,7 +12,9 @@ import (
 func CopyConn(dst, src *net.Conn, done chan struct{}, description string) {
 	buffer := make([]byte, 1)
 
+	LogIfErr("CopyConn SetReadDeadline First", (*src).SetReadDeadline(time.Now().Add(time.Hour)))
 	n, err := (*src).Read(buffer)
+	LogIfErr("CopyConn reset SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
 	if LogIfErr("CopyConn first Read "+description, err) {
 		done <- struct{}{}
 		return
@@ -26,7 +28,7 @@ func CopyConn(dst, src *net.Conn, done chan struct{}, description string) {
 
 	LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Now().Add(time.Second*5)))
 	_, _ = io.Copy(*dst, *src)
-	LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
+	LogIfErr("CopyConn reset SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
 
 	done <- struct{}{}
 }
