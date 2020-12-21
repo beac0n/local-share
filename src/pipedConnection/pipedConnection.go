@@ -8,7 +8,7 @@ import (
 )
 
 type PipedConnection struct {
-	done           bool
+	doneChan       chan struct{}
 	publicListener *net.Listener
 	publicConnChan chan *net.Conn
 	clientListener *net.Listener
@@ -27,15 +27,12 @@ func NewPipedConnection() (PipedConnection, error) {
 	}
 
 	maxConnections := 20
-	publicConnChan := make(chan *net.Conn, maxConnections)
-	clientConnChan := make(chan *net.Conn, maxConnections)
-
 	connection := PipedConnection{
-		done:           false,
+		doneChan:       make(chan struct{}),
 		publicListener: &publicListener,
-		publicConnChan: publicConnChan,
+		publicConnChan: make(chan *net.Conn, maxConnections),
 		clientListener: &clientListener,
-		clientConnChan: clientConnChan,
+		clientConnChan: make(chan *net.Conn, maxConnections),
 	}
 
 	go connection.createPublicConnections()
@@ -50,9 +47,11 @@ func NewPipedConnection() (PipedConnection, error) {
 
 func (connection *PipedConnection) createClientConnections() {
 	for {
-		if connection.done {
-			util.LogIfErr("", (*connection.clientListener).Close())
+		select {
+		case <-connection.doneChan:
+			connection.doneChan <- struct{}{}
 			return
+		default:
 		}
 
 		conn, err := (*connection.clientListener).Accept()
@@ -71,9 +70,11 @@ func (connection *PipedConnection) createClientConnections() {
 
 func (connection *PipedConnection) createPublicConnections() {
 	for {
-		if connection.done {
-			util.LogIfErr("", (*connection.publicListener).Close())
+		select {
+		case <-connection.doneChan:
+			connection.doneChan <- struct{}{}
 			return
+		default:
 		}
 
 		conn, err := (*connection.publicListener).Accept()
@@ -91,18 +92,29 @@ func (connection *PipedConnection) createPublicConnections() {
 }
 
 func (connection *PipedConnection) Done() {
-	connection.done = true
+	_ = (*connection.clientListener).Close()
+	_ = (*connection.publicListener).Close()
+	connection.doneChan <- struct{}{}
 }
 
 func (connection *PipedConnection) handleCopyConns() {
-
 	for {
-		if connection.done {
+		var clientConn *net.Conn
+		var publicConn *net.Conn
+
+		select {
+		case <-connection.doneChan:
+			connection.doneChan <- struct{}{}
 			return
+		case clientConn = <-connection.clientConnChan:
 		}
 
-		clientConn := <-connection.clientConnChan
-		publicConn := <-connection.publicConnChan
+		select {
+		case <-connection.doneChan:
+			connection.doneChan <- struct{}{}
+			return
+		case publicConn = <-connection.publicConnChan:
+		}
 
 		done := make(chan struct{})
 		go util.CopyConn(publicConn, clientConn, done, "public<-client")
@@ -114,7 +126,6 @@ func (connection *PipedConnection) handleCopyConns() {
 		_ = (*publicConn).Close()
 		_ = (*clientConn).Close()
 	}
-
 }
 
 func (connection *PipedConnection) GetPublicPort() string {
