@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 )
 
@@ -32,38 +31,11 @@ func CopyConn(dst, src *net.Conn, done *chan struct{}, description string) {
 		return
 	}
 
-	for {
-		LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Now().Add(time.Second*5)))
-		n, err := (*src).Read(buffer)
-		LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
-
-		// expected errors
-		if netErr, ok := err.(net.Error); err == io.EOF || (ok && netErr.Timeout()) || IsBrokenPipeError(err) {
-			break
-		}
-
-		// unexpected errors
-		if LogIfErr("CopyConn Read "+description, err) {
-			break
-		}
-
-		_, err = (*dst).Write(buffer[0:n])
-		// expected errors
-		if IsBrokenPipeError(err) {
-			break
-		}
-
-		// unexpected errors
-		if LogIfErr("CopyConn Write "+description, err) {
-			break
-		}
-	}
+	LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Now().Add(time.Second*5)))
+	_, _ = io.Copy(*dst, *src)
+	LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
 
 	*done <- struct{}{}
-}
-
-func IsBrokenPipeError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "broken pipe")
 }
 
 func LogIfErr(prefix string, err error) bool {
