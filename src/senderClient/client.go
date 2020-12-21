@@ -78,30 +78,32 @@ func (connConfig *ConnConfig) getPipeConn() net.Conn {
 
 func Run(serverHost string, ports []string) {
 	deleteSuffixes := make(chan string, len(ports))
+	receiverCommandSuffixes := make(chan string, len(ports))
+
+	receiverCommand := "./local-share -receiver -host " + serverHost
 
 	for _, port := range ports {
-		go initPipedConnectionForPort(serverHost, port, deleteSuffixes)
+		go initPipedConnectionForPort(serverHost, port, deleteSuffixes, receiverCommandSuffixes)
 	}
+
+	for range ports {
+		receiverCommandSuffix := <-receiverCommandSuffixes
+		receiverCommand += receiverCommandSuffix
+	}
+
+	fmt.Println("receiver command:", receiverCommand)
 
 	util.WaitForSigInt(false)
 
-	deleteAllPipedConnections(serverHost, deleteSuffixes)
+	for range ports {
+		deleteSuffix := <-deleteSuffixes
+		go deletePipedConnection(serverHost, deleteSuffix)
+	}
 
 	os.Exit(0)
 }
 
-func deleteAllPipedConnections(serverHost string, deleteSuffixes chan string) {
-	for {
-		select {
-		case deleteSuffix := <-deleteSuffixes:
-			go deletePipedConnection(serverHost, deleteSuffix)
-		default:
-			return
-		}
-	}
-}
-
-func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes chan string) {
+func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes, receiverCommandSuffixes chan string) {
 	config := getPipedConnectionConfig(serverHost)
 
 	serverHostSplit := strings.Split(serverHost, ":")
@@ -111,15 +113,9 @@ func initPipedConnectionForPort(serverHost string, port string, deleteSuffixes c
 	publicPortString := strconv.Itoa(config.Public)
 
 	deleteSuffixes <- "?client=" + clientPortString + "&public=" + publicPortString
+	receiverCommandSuffixes <- " -local-ports " + port + " -remote-ports " + publicPortString
 
-	pipeHost := "127.0.0.1:" + port
-	serverHostForClient := serverHostIp + ":" + clientPortString
-	serverHostForPublic := serverHostIp + ":" + publicPortString
-
-	fmt.Println(pipeHost, "<-", serverHostForClient, "<-", serverHostForPublic, "<- sender")
-
-	connConfig := ConnConfig{serverHost: serverHostForClient, pipeHost: pipeHost}
-
+	connConfig := ConnConfig{serverHost: serverHostIp + ":" + clientPortString, pipeHost: "127.0.0.1:" + port}
 	connConfig.initPipedConnections()
 }
 
