@@ -45,7 +45,7 @@ func (config *ConnConfig) initServerDial(i int) {
 		return
 	}
 
-	clientConnChan := make(chan *net.Conn, 10)
+	clientConnChan := make(chan *net.Conn)
 	go handleCreateConns(&localListener, &clientConnChan)
 
 	for {
