@@ -97,7 +97,7 @@ func Run(serverHost string, ports []string) {
 
 	for range ports {
 		deleteSuffix := <-deleteSuffixes
-		go deletePipedConnection(serverHost, deleteSuffix)
+		deletePipedConnection(serverHost, deleteSuffix)
 	}
 
 	os.Exit(0)
