@@ -1,9 +1,9 @@
 package pipedConnection
 
 import (
-	"log"
 	"net"
 	"strings"
+	"time"
 	"util"
 )
 
@@ -26,8 +26,9 @@ func NewPipedConnection() (PipedConnection, error) {
 		return PipedConnection{}, err
 	}
 
-	publicConnChan := make(chan *net.Conn, 10)
-	clientConnChan := make(chan *net.Conn, 10)
+	maxConnections := 100
+	publicConnChan := make(chan *net.Conn, maxConnections)
+	clientConnChan := make(chan *net.Conn, maxConnections)
 
 	connection := PipedConnection{
 		done:           false,
@@ -37,34 +38,55 @@ func NewPipedConnection() (PipedConnection, error) {
 		clientConnChan: &clientConnChan,
 	}
 
-	go connection.handleCreateConns()
-	go connection.handleCopyConns()
+	go connection.createPublicConnections()
+	go connection.createClientConnections()
+
+	for i := 0; i < maxConnections; i++ {
+		go connection.handleCopyConns()
+	}
 
 	return connection, nil
 }
 
-func (connection *PipedConnection) handleCreateConns() {
+func (connection *PipedConnection) createClientConnections() {
 	for {
 		if connection.done {
-			util.LogIfErr((*connection.publicListener).Close())
-			util.LogIfErr((*connection.clientListener).Close())
+			util.LogIfErr("", (*connection.clientListener).Close())
 			return
 		}
 
-		publicConn, err := (*connection.publicListener).Accept()
-		if err != nil {
-			log.Println("handleCreateConns ERR", err)
+		conn, err := (*connection.clientListener).Accept()
+		if util.LogIfErr("createClientConnections Accept", err) {
+			return
+		}
+		err = conn.(*net.TCPConn).SetKeepAlive(true)
+		util.LogIfErr("createClientConnections SetKeepAlive", err)
+
+		err = conn.(*net.TCPConn).SetKeepAlivePeriod(time.Millisecond * 100)
+		util.LogIfErr("createClientConnections SetKeepAlivePeriod", err)
+
+		*connection.clientConnChan <- &conn
+	}
+}
+
+func (connection *PipedConnection) createPublicConnections() {
+	for {
+		if connection.done {
+			util.LogIfErr("", (*connection.publicListener).Close())
 			return
 		}
 
-		clientConn, err := (*connection.clientListener).Accept()
-		if util.LogIfErr(err) {
-			util.LogIfErr((*connection.publicListener).Close())
+		conn, err := (*connection.publicListener).Accept()
+		if util.LogIfErr("createPublicConnections Accept", err) {
 			return
 		}
+		err = conn.(*net.TCPConn).SetKeepAlive(true)
+		util.LogIfErr("createPublicConnections SetKeepAlive", err)
 
-		*connection.publicConnChan <- &publicConn
-		*connection.clientConnChan <- &clientConn
+		err = conn.(*net.TCPConn).SetKeepAlivePeriod(time.Millisecond * 100)
+		util.LogIfErr("createClientConnections SetKeepAlivePeriod", err)
+
+		*connection.publicConnChan <- &conn
 	}
 }
 
@@ -73,30 +95,26 @@ func (connection *PipedConnection) Done() {
 }
 
 func (connection *PipedConnection) handleCopyConns() {
+
 	for {
 		if connection.done {
 			return
 		}
 
-		publicConn := <-(*connection.publicConnChan)
 		clientConn := <-(*connection.clientConnChan)
+		publicConn := <-(*connection.publicConnChan)
 
-		go connection.handleCopyConn(publicConn, clientConn)
+		done := make(chan struct{})
+		go util.CopyConn(publicConn, clientConn, &done, "public<-client")
+		go util.CopyConn(clientConn, publicConn, &done, "client<-public")
+
+		<-done
+		<-done
+
+		_ = (*publicConn).Close()
+		_ = (*clientConn).Close()
 	}
-}
 
-func (connection *PipedConnection) handleCopyConn(publicConn *net.Conn, clientConn *net.Conn) {
-	clientDone := make(chan struct{})
-	publicDone := make(chan struct{})
-
-	go util.CopyConn(clientConn, publicConn, publicDone)
-	go util.CopyConn(publicConn, clientConn, clientDone)
-
-	<-publicDone
-	util.LogIfErr((*publicConn).Close())
-
-	<-clientDone
-	util.LogIfErr((*clientConn).Close())
 }
 
 func (connection *PipedConnection) GetPublicPort() string {
@@ -116,7 +134,8 @@ func GetKeyFromPorts(clientPort, publicPort string) string {
 }
 
 func getTcpListener() (net.Listener, error) {
-	return net.Listen("tcp", "0.0.0.0:0")
+	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	return listener, err
 }
 
 func getPortFromListener(listener *net.Listener) string {

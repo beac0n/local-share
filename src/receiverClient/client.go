@@ -41,7 +41,7 @@ func (config *ConnConfig) initServerDial(i int) {
 	serverHostIp := strings.Join(serverHostSplit[0:len(serverHostSplit)-1], ":")
 
 	localListener, err := net.Listen("tcp", "127.0.0.1:"+localPort)
-	if util.LogIfErr(err) {
+	if util.LogIfErr("initServerDial", err) {
 		return
 	}
 
@@ -56,26 +56,26 @@ func (config *ConnConfig) initServerDial(i int) {
 
 func (config *ConnConfig) handleCopyConns(serverHostIp string, remotePort string, clientConn *net.Conn) {
 	serverConn, err := net.Dial("tcp", serverHostIp+":"+remotePort)
-	if util.LogIfErr(err) {
+	if util.LogIfErr("handleCopyConns", err) {
 		return
 	}
 
 	done := make(chan struct{})
 
-	go util.CopyConn(&serverConn, clientConn, done)
-	go util.CopyConn(clientConn, &serverConn, done)
+	go util.CopyConn(&serverConn, clientConn, &done, "server<-client")
+	go util.CopyConn(clientConn, &serverConn, &done, "client<-sever")
 
 	<-done
 	<-done
 
-	util.LogIfErr(serverConn.Close())
-	util.LogIfErr((*clientConn).Close())
+	util.LogIfErr("handleCopyConns serverConn close", serverConn.Close())
+	util.LogIfErr("handleCopyConns clientConn close", (*clientConn).Close())
 }
 
 func handleCreateConns(listener *net.Listener, connChan *chan *net.Conn) {
 	for {
 		conn, err := (*listener).Accept()
-		if !util.LogIfErr(err) {
+		if !util.LogIfErr("handleCreateConns", err) {
 			*connChan <- &conn
 		}
 	}

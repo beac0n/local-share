@@ -35,7 +35,7 @@ func (reqHandler *ReqHandler) create(resWriter http.ResponseWriter) {
 	headers.Add("Content-Type", "application/json")
 
 	conn, err := pipedConnection.NewPipedConnection()
-	if util.LogIfErr(err) {
+	if util.LogIfErr("server create piped connection", err) {
 		resWriter.WriteHeader(500)
 		return
 	}
@@ -43,7 +43,7 @@ func (reqHandler *ReqHandler) create(resWriter http.ResponseWriter) {
 	pipedConnections.Store(conn.GetKey(), &conn)
 
 	message := "{\"client\":" + conn.GetClientPort() + ", \"public\": " + conn.GetPublicPort() + "}"
-	if _, err := resWriter.Write([]byte(message)); util.LogIfErr(err) {
+	if _, err := resWriter.Write([]byte(message)); util.LogIfErr("server create piped connection message", err) {
 		resWriter.WriteHeader(500)
 		return
 	}
