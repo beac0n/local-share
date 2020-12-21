@@ -9,25 +9,18 @@ import (
 	"time"
 )
 
-func CopyConn(dst, src *net.Conn, done *chan struct{}, description string) {
-	buffer := MakeMaxTcpPacketSizeBuf()
+func CopyConn(dst, src *net.Conn, done chan struct{}, description string) {
+	buffer := make([]byte, 1)
 
 	n, err := (*src).Read(buffer)
-	// expected errors
-	if netErr, ok := err.(net.Error); err == io.EOF || (ok && netErr.Timeout()) {
-		*done <- struct{}{}
-		return
-	}
-
-	// unexpected errors
 	if LogIfErr("CopyConn first Read "+description, err) {
-		*done <- struct{}{}
+		done <- struct{}{}
 		return
 	}
 
 	_, err = (*dst).Write(buffer[0:n])
 	if LogIfErr("CopyConn first Write "+description, err) {
-		*done <- struct{}{}
+		done <- struct{}{}
 		return
 	}
 
@@ -35,7 +28,7 @@ func CopyConn(dst, src *net.Conn, done *chan struct{}, description string) {
 	_, _ = io.Copy(*dst, *src)
 	LogIfErr("CopyConn SetReadDeadline", (*src).SetReadDeadline(time.Time{}))
 
-	*done <- struct{}{}
+	done <- struct{}{}
 }
 
 func LogIfErr(prefix string, err error) bool {
@@ -54,8 +47,4 @@ func WaitForSigInt(osExit bool) {
 	if osExit {
 		os.Exit(0)
 	}
-}
-
-func MakeMaxTcpPacketSizeBuf() []byte {
-	return make([]byte, 65535)
 }

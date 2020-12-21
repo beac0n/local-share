@@ -19,7 +19,7 @@ type ConnConfig struct {
 }
 
 func (connConfig *ConnConfig) initPipedConnections() {
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 20; i++ {
 		go connConfig.initPipedConnection()
 	}
 }
@@ -27,11 +27,26 @@ func (connConfig *ConnConfig) initPipedConnections() {
 func (connConfig *ConnConfig) initPipedConnection() {
 	for {
 		serverConn := connConfig.getServerConn()
-		pipeConn := connConfig.getPipeConn()
 
 		done := make(chan struct{})
-		go util.CopyConn(&pipeConn, &serverConn, &done, "pipe<-server")
-		go util.CopyConn(&serverConn, &pipeConn, &done, "server<-pipe")
+
+		buffer := make([]byte, 1)
+
+		n, err := serverConn.Read(buffer)
+		if util.LogIfErr("initPipedConnection Read", err) {
+			_ = serverConn.Close()
+		}
+
+		// init pipeConn as late as possible => some tcp servers drop connection if data is not send immediately
+		pipeConn := connConfig.getPipeConn()
+		_, err = pipeConn.Write(buffer[0:n])
+		if util.LogIfErr("initPipedConnection Write", err) {
+			_ = pipeConn.Close()
+			_ = serverConn.Close()
+		}
+
+		go util.CopyConn(&pipeConn, &serverConn, done, "pipe<-server")
+		go util.CopyConn(&serverConn, &pipeConn, done, "server<-pipe")
 
 		<-done
 		<-done

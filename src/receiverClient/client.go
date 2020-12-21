@@ -46,7 +46,7 @@ func (config *ConnConfig) initServerDial(i int) {
 	}
 
 	clientConnChan := make(chan *net.Conn)
-	go handleCreateConns(&localListener, &clientConnChan)
+	go handleCreateConns(&localListener, clientConnChan)
 
 	for {
 		clientConn := <-clientConnChan
@@ -62,8 +62,8 @@ func (config *ConnConfig) handleCopyConns(serverHostIp string, remotePort string
 
 	done := make(chan struct{})
 
-	go util.CopyConn(&serverConn, clientConn, &done, "server<-client")
-	go util.CopyConn(clientConn, &serverConn, &done, "client<-sever")
+	go util.CopyConn(&serverConn, clientConn, done, "server<-client")
+	go util.CopyConn(clientConn, &serverConn, done, "client<-sever")
 
 	<-done
 	<-done
@@ -72,11 +72,11 @@ func (config *ConnConfig) handleCopyConns(serverHostIp string, remotePort string
 	util.LogIfErr("handleCopyConns clientConn close", (*clientConn).Close())
 }
 
-func handleCreateConns(listener *net.Listener, connChan *chan *net.Conn) {
+func handleCreateConns(listener *net.Listener, connChan chan *net.Conn) {
 	for {
 		conn, err := (*listener).Accept()
 		if !util.LogIfErr("handleCreateConns", err) {
-			*connChan <- &conn
+			connChan <- &conn
 		}
 	}
 }

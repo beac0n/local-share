@@ -10,9 +10,9 @@ import (
 type PipedConnection struct {
 	done           bool
 	publicListener *net.Listener
-	publicConnChan *chan *net.Conn
+	publicConnChan chan *net.Conn
 	clientListener *net.Listener
-	clientConnChan *chan *net.Conn
+	clientConnChan chan *net.Conn
 }
 
 func NewPipedConnection() (PipedConnection, error) {
@@ -26,16 +26,16 @@ func NewPipedConnection() (PipedConnection, error) {
 		return PipedConnection{}, err
 	}
 
-	maxConnections := 100
+	maxConnections := 20
 	publicConnChan := make(chan *net.Conn, maxConnections)
 	clientConnChan := make(chan *net.Conn, maxConnections)
 
 	connection := PipedConnection{
 		done:           false,
 		publicListener: &publicListener,
-		publicConnChan: &publicConnChan,
+		publicConnChan: publicConnChan,
 		clientListener: &clientListener,
-		clientConnChan: &clientConnChan,
+		clientConnChan: clientConnChan,
 	}
 
 	go connection.createPublicConnections()
@@ -65,7 +65,7 @@ func (connection *PipedConnection) createClientConnections() {
 		err = conn.(*net.TCPConn).SetKeepAlivePeriod(time.Millisecond * 100)
 		util.LogIfErr("createClientConnections SetKeepAlivePeriod", err)
 
-		*connection.clientConnChan <- &conn
+		connection.clientConnChan <- &conn
 	}
 }
 
@@ -86,7 +86,7 @@ func (connection *PipedConnection) createPublicConnections() {
 		err = conn.(*net.TCPConn).SetKeepAlivePeriod(time.Millisecond * 100)
 		util.LogIfErr("createClientConnections SetKeepAlivePeriod", err)
 
-		*connection.publicConnChan <- &conn
+		connection.publicConnChan <- &conn
 	}
 }
 
@@ -101,12 +101,12 @@ func (connection *PipedConnection) handleCopyConns() {
 			return
 		}
 
-		clientConn := <-(*connection.clientConnChan)
-		publicConn := <-(*connection.publicConnChan)
+		clientConn := <-connection.clientConnChan
+		publicConn := <-connection.publicConnChan
 
 		done := make(chan struct{})
-		go util.CopyConn(publicConn, clientConn, &done, "public<-client")
-		go util.CopyConn(clientConn, publicConn, &done, "client<-public")
+		go util.CopyConn(publicConn, clientConn, done, "public<-client")
+		go util.CopyConn(clientConn, publicConn, done, "client<-public")
 
 		<-done
 		<-done
