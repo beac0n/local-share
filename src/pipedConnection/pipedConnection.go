@@ -39,7 +39,7 @@ func NewPipedConnection() (PipedConnection, error) {
 	go connection.createClientConnections()
 
 	for i := 0; i < maxConnections; i++ {
-		go connection.handleCopyConns()
+		go connection.handleCopyCons()
 	}
 
 	return connection, nil
@@ -97,7 +97,7 @@ func (connection *PipedConnection) Done() {
 	connection.doneChan <- struct{}{}
 }
 
-func (connection *PipedConnection) handleCopyConns() {
+func (connection *PipedConnection) handleCopyCons() {
 	for {
 		var clientConn *net.Conn
 		var publicConn *net.Conn
