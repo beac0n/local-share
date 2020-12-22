@@ -2,7 +2,9 @@ package pipedConnection
 
 import (
 	"net"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"util"
 )
@@ -144,8 +146,35 @@ func GetKeyFromPorts(clientPort, publicPort string) string {
 	return clientPort + "_" + publicPort
 }
 
+// https://stackoverflow.com/questions/218839/assigning-tcp-ip-ports-for-in-house-application-use
+const portRangeStart = 29151
+const portRangeEnd = 49151
+
+func initAvailableTcpPorts() *sync.Map {
+	availableTcpPorts := &sync.Map{}
+	for i := portRangeStart; i <= portRangeEnd; i++ {
+		availableTcpPorts.Store(i, true)
+	}
+	return availableTcpPorts
+}
+
+var availableTcpPorts = initAvailableTcpPorts()
+
 func getTcpListener() (net.Listener, error) {
-	listener, err := net.Listen("tcp", "0.0.0.0:0")
+	var listener net.Listener
+	var err error
+	for i := portRangeStart; i <= portRangeEnd; i++ {
+		if portAvailable, ok := availableTcpPorts.Load(i); !ok || !portAvailable.(bool) {
+			continue
+		}
+
+		availableTcpPorts.Store(i, false)
+		listener, err = net.Listen("tcp", "0.0.0.0:"+strconv.Itoa(i))
+		if err == nil {
+			break
+		}
+	}
+
 	return listener, err
 }
 
