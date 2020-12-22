@@ -10,11 +10,9 @@ import (
 type ReqHandler struct {
 }
 
-var pipedConnections *sync.Map
+var pipedConnections = &sync.Map{}
 
 func Run(host string) {
-	pipedConnections = &sync.Map{}
-
 	if err := http.ListenAndServe(host, &ReqHandler{}); err != nil {
 		panic(err)
 	}
