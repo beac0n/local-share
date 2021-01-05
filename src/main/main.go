@@ -4,9 +4,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"receiverClient"
-	"senderClient"
-	"server"
+	"local-share/src/receiverClient"
+	"local-share/src/senderClient"
+	"local-share/src/server"
 	"strconv"
 	"strings"
 )

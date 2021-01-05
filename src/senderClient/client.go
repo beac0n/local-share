@@ -4,13 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"local-share/src/util"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"util"
 )
 
 type ConnConfig struct {

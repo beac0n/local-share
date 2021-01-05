@@ -1,12 +1,12 @@
 package pipedConnection
 
 import (
+	"local-share/src/util"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"util"
 )
 
 type PipedConnection struct {

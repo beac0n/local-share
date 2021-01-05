@@ -2,10 +2,10 @@ package receiverClient
 
 import (
 	"fmt"
+	"local-share/src/util"
 	"net"
 	"os"
 	"strings"
-	"util"
 )
 
 type ConnConfig struct {

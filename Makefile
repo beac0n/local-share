@@ -1,4 +1,3 @@
-export GOPATH=$(PWD)
 FORCE: ;
 
 build: FORCE
